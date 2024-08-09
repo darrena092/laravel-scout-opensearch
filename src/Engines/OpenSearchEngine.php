@@ -146,13 +146,25 @@ class OpenSearchEngine extends \Laravel\Scout\Engines\Engine
 
         $objectIdPositions = array_flip($objectIds);
 
-        return $model->getScoutModelsByIds(
+        $models = $model->getScoutModelsByIds(
             $builder, $objectIds
         )->filter(function ($model) use ($objectIds) {
             return in_array($model->getScoutKey(), $objectIds);
         })->sortBy(function ($model) use ($objectIdPositions) {
             return $objectIdPositions[$model->getScoutKey()];
-        })->values();
+        });
+
+        return $models->map(function ($model) use ($results) {
+            if ($model->appendsRawSearchResults ?? false) {
+                $result = collect($results)->firstWhere('_id', $model->id);
+
+                if ($result) {
+                    $model->rawSearchResult = $result['_source'] ?? [];
+                }
+            }
+
+            return $model;
+        });
     }
 
     public function lazyMap(Builder $builder, $results, $model)
