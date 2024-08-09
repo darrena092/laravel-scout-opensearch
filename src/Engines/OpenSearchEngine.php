@@ -99,8 +99,6 @@ class OpenSearchEngine extends \Laravel\Scout\Engines\Engine
         $index = $builder->index ?: $builder->model->searchableAs();
         $searchBody = SearchFactory::create($builder, $options);
 
-        $options = array_merge($builder->options, $options);
-
         if ($builder->callback) {
             return call_user_func(
                 $builder->callback,
