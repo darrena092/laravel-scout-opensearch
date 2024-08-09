@@ -2,6 +2,7 @@
 
 namespace ByteXR\LaravelScoutOpenSearch\Engines;
 
+use ByteXR\LaravelScoutOpenSearch\Factories\SearchFactory;
 use ByteXR\LaravelScoutOpenSearch\Services\OpenSearchClient;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\LazyCollection;
@@ -96,6 +97,7 @@ class OpenSearchEngine extends \Laravel\Scout\Engines\Engine
     protected function performSearch(Builder $builder, array $options = [])
     {
         $index = $builder->index ?: $builder->model->searchableAs();
+        $searchBody = SearchFactory::create($builder, $options);
 
         $options = array_merge($builder->options, $options);
 
@@ -103,17 +105,13 @@ class OpenSearchEngine extends \Laravel\Scout\Engines\Engine
             return call_user_func(
                 $builder->callback,
                 $this->openSearch,
-                $builder->query,
-                $options
+                $searchBody,
             );
         }
 
-        $filters = $this->filters($builder);
-
         return $this->openSearch->search(
             $index,
-            $builder->query,
-            array_merge_recursive($options, $filters),
+            $searchBody->toArray(),
         );
     }
 
@@ -177,25 +175,6 @@ class OpenSearchEngine extends \Laravel\Scout\Engines\Engine
         })->sortBy(function ($model) use ($objectIdPositions) {
             return $objectIdPositions[$model->getScoutKey()];
         })->values();
-    }
-
-    protected function filters(Builder $builder): array
-    {
-        if(empty($builder->wheres)) {
-            return [];
-        }
-
-        return [
-            'body' => [
-                'query' => [
-                    'bool' => [
-                        'filter' => [
-                            ['term' =>  $builder->wheres]
-                        ]
-                    ]
-                ]
-            ]
-        ];
     }
 
     public function getTotalCount($results)
