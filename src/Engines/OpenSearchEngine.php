@@ -2,6 +2,7 @@
 
 namespace ByteXR\LaravelScoutOpenSearch\Engines;
 
+use ByteXR\LaravelScoutOpenSearch\Factories\SearchFactory;
 use ByteXR\LaravelScoutOpenSearch\Services\OpenSearchClient;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\LazyCollection;
@@ -96,24 +97,19 @@ class OpenSearchEngine extends \Laravel\Scout\Engines\Engine
     protected function performSearch(Builder $builder, array $options = [])
     {
         $index = $builder->index ?: $builder->model->searchableAs();
-
-        $options = array_merge($builder->options, $options);
+        $searchBody = SearchFactory::create($builder, $options);
 
         if ($builder->callback) {
             return call_user_func(
                 $builder->callback,
                 $this->openSearch,
-                $builder->query,
-                $options
+                $searchBody,
             );
         }
 
-        $filters = $this->filters($builder);
-
         return $this->openSearch->search(
             $index,
-            $builder->query,
-            array_merge_recursive($options, $filters),
+            $searchBody->toArray(),
         );
     }
 
@@ -150,13 +146,25 @@ class OpenSearchEngine extends \Laravel\Scout\Engines\Engine
 
         $objectIdPositions = array_flip($objectIds);
 
-        return $model->getScoutModelsByIds(
+        $models = $model->getScoutModelsByIds(
             $builder, $objectIds
         )->filter(function ($model) use ($objectIds) {
             return in_array($model->getScoutKey(), $objectIds);
         })->sortBy(function ($model) use ($objectIdPositions) {
             return $objectIdPositions[$model->getScoutKey()];
-        })->values();
+        });
+
+        return $models->map(function ($model) use ($results) {
+            if ($model->appendsRawSearchResults ?? false) {
+                $result = collect($results)->firstWhere('_id', $model->id);
+
+                if ($result) {
+                    $model->rawSearchResult = $result['_source'] ?? [];
+                }
+            }
+
+            return $model;
+        });
     }
 
     public function lazyMap(Builder $builder, $results, $model)
@@ -177,25 +185,6 @@ class OpenSearchEngine extends \Laravel\Scout\Engines\Engine
         })->sortBy(function ($model) use ($objectIdPositions) {
             return $objectIdPositions[$model->getScoutKey()];
         })->values();
-    }
-
-    protected function filters(Builder $builder): array
-    {
-        if(empty($builder->wheres)) {
-            return [];
-        }
-
-        return [
-            'body' => [
-                'query' => [
-                    'bool' => [
-                        'filter' => [
-                            ['term' =>  $builder->wheres]
-                        ]
-                    ]
-                ]
-            ]
-        ];
     }
 
     public function getTotalCount($results)
